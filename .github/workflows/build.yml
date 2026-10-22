@@ -25,7 +25,8 @@ jobs:
         include:
           - name: Windows
             os: windows-latest
-            generator: "Visual Studio 17 2022"
+            # Empty: let CMake pick whichever Visual Studio the runner has.
+            generator: ""
           - name: macOS
             os: macos-14
             generator: Ninja
@@ -62,13 +63,16 @@ jobs:
         shell: bash
         run: |
           extra=()
+          if [ -n "${{ matrix.generator }}" ]; then
+            extra+=(-G "${{ matrix.generator }}")
+          fi
           if [ "$RUNNER_OS" != "Windows" ]; then
             extra+=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
           fi
           if [ "$RUNNER_OS" == "macOS" ]; then
             extra+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
           fi
-          cmake -S . -B build -G "${{ matrix.generator }}" "${extra[@]}"
+          cmake -S . -B build "${extra[@]}"
 
       - name: Build
         run: cmake --build build --config Release --parallel 4

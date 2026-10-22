@@ -1,0 +1,110 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a release with this tag (e.g. v0.1.0-alpha). Leave empty to only build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            generator: "Visual Studio 17 2022"
+          - name: macOS
+            os: macos-14
+            generator: Ninja
+          - name: Linux
+            os: ubuntu-24.04
+            generator: Ninja
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Only our two submodules; Tracktion's own JUCE submodule is not needed.
+          submodules: true
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libjack-jackd2-dev ladspa-sdk \
+            libcurl4-openssl-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxi-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            mesa-common-dev libgl1-mesa-dev
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: ccache
+        if: runner.os != 'Windows'
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Configure
+        shell: bash
+        run: |
+          extra=()
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            extra+=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          fi
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            extra+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
+          fi
+          cmake -S . -B build -G "${{ matrix.generator }}" "${extra[@]}"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          out=build/Loonitunes_artefacts/Release
+          case "$RUNNER_OS" in
+            Windows) 7z a "dist/Loonitunes-Windows.zip" "./$out/Loonitunes.exe" LICENSE README.md ;;
+            macOS)   ditto -c -k --keepParent "$out/Loonitunes.app" "dist/Loonitunes-macOS.zip" ;;
+            Linux)   tar -czf "dist/Loonitunes-Linux.tar.gz" -C "$out" Loonitunes ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Loonitunes-${{ matrix.name }}
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*
+          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
+          generate_release_notes: true

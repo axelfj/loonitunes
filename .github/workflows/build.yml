@@ -28,7 +28,7 @@ jobs:
             # Empty: let CMake pick whichever Visual Studio the runner has.
             generator: ""
           - name: macOS
-            os: macos-14
+            os: macos-latest
             generator: Ninja
           - name: Linux
             os: ubuntu-24.04

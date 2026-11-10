@@ -5,6 +5,7 @@
 */
 
 #include "Song.h"
+#include "SafeExport.h"
 
 #include <tracktion_engine/tracktion_engine.h>
 
@@ -210,13 +211,21 @@ int Song::getPlayingStep() const
 bool Song::exportWav (const juce::File& destination)
 {
     stop();
-    destination.deleteFile();
 
     juce::BigInteger tracks;
     tracks.setRange (0, te::getAllTracks (*edit).size(), true);
 
-    return te::Renderer::renderToFile ("Export", destination, *edit, songRange (*edit), tracks,
-                                       true, false, {}, false);
+    return writeFileSafely (destination, [&] (const juce::File& temporary)
+    {
+        if (! te::Renderer::renderToFile ("Export", temporary, *edit, songRange (*edit), tracks,
+                                          true, false, {}, false))
+            return false;
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> reader (
+            wav.createReaderFor (temporary.createInputStream().release(), true));
+        return reader != nullptr && reader->lengthInSamples > 0;
+    });
 }
 
 } // namespace loonitunes

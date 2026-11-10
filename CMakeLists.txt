@@ -105,4 +105,11 @@ if (LOONITUNES_BUILD_TESTS)
         juce::juce_recommended_warning_flags)
 
     add_test (NAME LoonitunesTests COMMAND LoonitunesTests)
+
+    juce_add_console_app (SafeExportTests PRODUCT_NAME "SafeExportTests")
+    target_sources (SafeExportTests PRIVATE tests/SafeExportTests.cpp)
+    target_include_directories (SafeExportTests PRIVATE src)
+    target_compile_definitions (SafeExportTests PRIVATE JUCE_USE_CURL=0)
+    target_link_libraries (SafeExportTests PRIVATE juce::juce_core)
+    add_test (NAME SafeExportTests COMMAND SafeExportTests)
 endif()
